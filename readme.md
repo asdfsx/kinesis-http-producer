@@ -17,3 +17,6 @@ curl -H "Content-Type: application/json" -X POST  --data '{"appid":"test"}'  htt
 
 supervisord 配置  
 http://liyangliang.me/posts/2015/06/using-supervisor/
+
+kinesis 介绍
+https://blog.insightdatascience.com/getting-started-with-aws-serverless-architecture-tutorial-on-kinesis-and-dynamodb-using-twitter-38a1352ca16d
