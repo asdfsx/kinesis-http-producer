@@ -4,6 +4,7 @@ import ConfigParser
 import logging
 import logging.config
 import traceback
+import hashlib
 
 from producer import kinesis_producer
 
@@ -27,10 +28,7 @@ def application (environ, start_response):
     request_method = environ["REQUEST_METHOD"]
     path = environ['PATH_INFO']
 
-    print request_method, path
-
-    if path == "/app" and request_method == "POST":
-        process_post(environ)
+    # print request_method, path
 
     status = "200 OK"
     response_headers = [
@@ -38,6 +36,18 @@ def application (environ, start_response):
         ("Content-Length", "2")
     ]
     response_body = "ok"
+
+    if path == "/app" and request_method == "POST":
+        process_post(environ)
+        
+        response_headers = [
+            ("Content-Type", "text/plain"),
+            ("Content-Length", "5")
+        ]
+        response_body = "appok"
+
+        start_response(status, response_headers)
+        return [response_body]
 
     start_response(status, response_headers)
     return [response_body]
@@ -48,6 +58,7 @@ def process_post(environ):
     if "CONTENT_LENGTH" in environ and environ["CONTENT_LENGTH"] != "":
         length = int(environ.get("CONTENT_LENGTH", "0"))
         content = environ['wsgi.input'].read(length).decode()
-        partition_key = "appid"
+        hash_num = int(hashlib.md5(content).hexdigest(), 16)
         if producerobj is not None:
-            producerobj.put_sync_record(content, partition_key)
+            producerobj.put_async_record(content, hash_num)
+            #producerobj.put_sync_record(content, hash_num)

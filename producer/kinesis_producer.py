@@ -3,7 +3,7 @@
 import ConfigParser
 import time
 import os
-
+import hashlib
 import traceback
 import logging
 import logging.config
@@ -69,15 +69,19 @@ class Producer(object):
         kinesis_stream_info = self.client.describe_stream(StreamName=self.stream_name)
         self.kinesis_shared_num = len(kinesis_stream_info["StreamDescription"]["Shards"])
 
-    def put_async_record(self, data):
+    def put_async_record(self, data, hash_num):
         """put record into cache"""
         self.cache_sem.acquire()
-        self.cache.append(data)
+        part_num = hash_num % self.kinesis_shared_num
+        partition_key = "partition_%03d" % (part_num,)
+        self.cache.append({"Data": data, "PartitionKey": partition_key},)
         self.cache_sem.release()
 
-    def put_sync_record(self, data, partition_key):
+    def put_sync_record(self, data, hash_num):
         """put record into kinesis directly"""
         self.config_sem.acquire()
+        part_num = hash_num % self.kinesis_shared_num
+        partition_key = "partition_%03d" % (part_num,)
         self.client.put_record(StreamName=self.stream_name,
                                Data=data,
                                PartitionKey=partition_key,)
@@ -87,7 +91,7 @@ class Producer(object):
         """check if config_file is modified"""
         while True:
             self.config_sem.acquire()
-            if self.config_changed != True:
+            if not self.config_changed:
                 latest_stat = os.stat(self.config_file)
                 if latest_stat.st_mtime != self.config_stat.st_mtime:
                     self.config_changed = True
@@ -100,7 +104,7 @@ class Producer(object):
             try:
                 # update config
                 self.config_sem.acquire()
-                if self.config_changed == True:
+                if self.config_changed:
                     self.readConfig()
                     self.config_changed = False
                 self.config_sem.release()
@@ -109,7 +113,18 @@ class Producer(object):
                 print "====kinesis_producer.Producer===="
                 if self.cache:
                     self.cache_sem.acquire()
-                    self.client.put_records(self.cache)
+                    ###
+                    # put_records api 每次最多发送500条记录，所以这里要做个处理，每批发200条
+                    ###
+                    cache_size = len(self.cache)
+                    batch = cache_size / 200
+                    for i in range(batch):
+                        start = i * 200
+                        end = (i + 1) * 200
+                        end2 = end > cache_size and cache_size or end
+                        print i, start, end, end2, cache_size, batch
+                        self.client.put_records(Records=self.cache[start:end2],
+                                                StreamName=self.stream_name)
                     self.cache = []
                     self.cache_sem.release()
 
